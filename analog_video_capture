@@ -1,0 +1,70 @@
+import cv2
+import numpy as np
+import RPi.GPIO as GPIO
+
+# Розміри для обробки кадрів
+FRAME_WIDTH = 400
+FRAME_HEIGHT = 296
+SCALE_FACTOR = 12
+RESIZED_WIDTH = int(FRAME_WIDTH / SCALE_FACTOR)
+RESIZED_HEIGHT = int(FRAME_HEIGHT / SCALE_FACTOR)
+
+# Функція для ініціалізації камери
+def init_camera():
+    cam = cv2.VideoCapture(0)
+    if not cam.isOpened():
+        print("Помилка: не вдалося відкрити камеру")
+        return None
+    return cam
+
+# Функція для налаштування PWM
+def init_pwm(pin):
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(pin, GPIO.OUT)
+    pwm = GPIO.PWM(pin, 100)
+    pwm.start(0)
+    return pwm
+
+# Функція для обробки кадрів
+def process_frame(frame):
+    resized_frame = cv2.resize(frame, (RESIZED_WIDTH, RESIZED_HEIGHT))
+    gray_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray_frame, 50, 100)
+
+    mean_brightness = np.mean(edges)
+    return edges, mean_brightness
+
+# Основна функція для захоплення, обробки і виведення відео
+def capture_process_and_output_video(camera, pwm):
+    cv2.namedWindow('Video', cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty('Video', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+    while True:
+        ret, frame = camera.read()
+        if not ret:
+            print("Помилка: не вдалося захопити кадр")
+            break
+
+        processed_frame, mean_brightness = process_frame(frame)
+        pwm.ChangeDutyCycle(mean_brightness * 100 / 255)  # Масштабування яскравості для PWM
+
+        cv2.imshow('Video', processed_frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    camera.release()
+    pwm.stop()
+    GPIO.cleanup()
+    cv2.destroyAllWindows()
+
+# Основна програма
+if __name__ == "__main__":
+    cam = init_camera()
+    if cam is None:
+        exit()
+
+    pwm_pin = 18
+    pwm = init_pwm(pwm_pin)
+
+    capture_process_and_output_video(cam, pwm)
